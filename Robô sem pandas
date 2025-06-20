@@ -1,0 +1,65 @@
+from iqoptionapi.stable_api import IQ_Option
+import time
+
+EMAIL = "jonathanpedroo@hotmail.com"
+SENHA = "2022goleiro"
+VALOR = 10
+TIMEFRAME = 1
+
+api = IQ_Option(EMAIL, SENHA)
+api.connect()
+api.change_balance("PRACTICE")
+
+def get_melhor_par():
+    pares = api.get_all_open_time()
+    payout = api.get_all_profit()
+    abertos = {p: payout[p]['turbo'] for p in pares['turbo'] if pares['turbo'][p]['open']}
+    return max(abertos, key=abertos.get)
+
+def coletar_candles(par):
+    return api.get_candles(par, 60, 10, time.time())
+
+def zigzag_simples(velas):
+    sinais = [0] * len(velas)
+    for i in range(2, len(velas) - 2):
+        c = velas[i]['close']
+        if c > velas[i-2]['close'] and c > velas[i+2]['close']:
+            sinais[i] = 1
+        elif c < velas[i-2]['close'] and c < velas[i+2]['close']:
+            sinais[i] = -1
+    return sinais
+
+def detectar_engolfo(velas):
+    ant = velas[-2]
+    ult = velas[-1]
+    if ant['close'] < ant['open'] and ult['close'] > ult['open'] and ult['open'] < ant['close']:
+        return "engolfo_alta"
+    elif ant['close'] > ant['open'] and ult['close'] < ult['open'] and ult['open'] > ant['close']:
+        return "engolfo_baixa"
+    return None
+
+def entrar(direcao, par):
+    print(f"ENTRADA: {direcao} em {par}")
+    status, id = api.buy(VALOR, par, direcao, TIMEFRAME)
+    print("SUCESSO" if status else "FALHOU")
+
+print("Robô iniciado...")
+
+while True:
+    try:
+        print("Analisando mercado...")
+        par = get_melhor_par()
+        velas = coletar_candles(par)
+        zigzag = zigzag_simples(velas)
+        padrao = detectar_engolfo(velas)
+
+        if zigzag[-2] == -1 and padrao == "engolfo_alta":
+            entrar("call", par)
+        elif zigzag[-2] == 1 and padrao == "engolfo_baixa":
+            entrar("put", par)
+
+        time.sleep(60)
+
+    except Exception as e:
+        print("Erro:", e)
+        time.sleep(10)
